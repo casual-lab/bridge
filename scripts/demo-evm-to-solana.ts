@@ -2,6 +2,7 @@
 
 import { ethers } from 'ethers';
 import * as dotenv from 'dotenv';
+import { Keypair } from '@solana/web3.js';
 
 dotenv.config();
 
@@ -11,13 +12,17 @@ const HARDHAT_DEFAULT_ACCOUNT = {
   privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
 };
 
+// 生成或使用固定的 Solana 测试账户
+// 使用固定的种子以便每次运行使用相同的接收地址
+const SOLANA_RECIPIENT_SEED = new Uint8Array(32).fill(1); // 固定种子
+const SOLANA_RECIPIENT_KEYPAIR = Keypair.fromSeed(SOLANA_RECIPIENT_SEED);
+
 const EVMBridgeABI = [
   "function lock(uint256 amount, bytes32 solanaAddress) external",
   "function getLockTransactionStatus(uint256 nonce) external view returns (uint8)",
   "function lockNonce() external view returns (uint256)",
   "event Locked(uint256 indexed nonce, address indexed user, bytes32 solanaAddress, uint256 amount, uint256 timestamp)",
 ];
-
 const MockUSDCABI = [
   "function balanceOf(address account) external view returns (uint256)",
   "function approve(address spender, uint256 amount) external returns (bool)",
@@ -46,14 +51,14 @@ async function main() {
   const bridge = new ethers.Contract(bridgeAddress, EVMBridgeABI, wallet);
   const usdc = new ethers.Contract(usdcAddress, MockUSDCABI, wallet);
 
-  // 模拟 Solana 接收地址（32字节）- 使用实际的 Solana 公钥格式
-  // 这里使用一个示例地址，实际应该是真实的 Solana base58 地址解码后的 32 字节
-  const solanaAddressBytes = Buffer.alloc(32);
-  Buffer.from('SolanaRecipient12345').copy(solanaAddressBytes);
+  // 使用真实的 Solana 公钥（32字节）
+  const solanaRecipientPubkey = SOLANA_RECIPIENT_KEYPAIR.publicKey;
+  const solanaAddressBytes = solanaRecipientPubkey.toBuffer();
   const solanaAddress = '0x' + solanaAddressBytes.toString('hex');
 
   console.log('User Address (EVM):', wallet.address);
-  console.log('Solana Recipient:', solanaAddress);
+  console.log('Solana Recipient (Base58):', solanaRecipientPubkey.toBase58());
+  console.log('Solana Recipient (Hex):', solanaAddress);
   console.log('Bridge Address:', bridgeAddress);
   console.log('USDC Address:', usdcAddress);
   console.log('');

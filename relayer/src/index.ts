@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { Connection, PublicKey, Keypair } from '@solana/web3.js';
-import { AnchorProvider, Program, Wallet } from '@coral-xyz/anchor';
+import { AnchorProvider, Program, Wallet, BN, EventParser, BorshCoder } from '@coral-xyz/anchor';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger, format, transports } from 'winston';
@@ -11,7 +11,7 @@ dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 // ============== Logger ==============
 const logger = createLogger({
-  level: 'info',
+  level: 'debug', // 改为 debug 级别以查看详细日志
   format: format.combine(
     format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     format.errors({ stack: true }),
@@ -26,7 +26,13 @@ const logger = createLogger({
       format: format.combine(
         format.colorize(),
         format.printf(({ timestamp, level, message, ...meta }) => {
-          return `${timestamp} [${level}]: ${message} ${Object.keys(meta).length ? JSON.stringify(meta, null, 2) : ''}`;
+          // BigInt 序列化处理
+          const stringifyWithBigInt = (obj: any) => {
+            return JSON.stringify(obj, (key, value) => 
+              typeof value === 'bigint' ? value.toString() : value
+            , 2);
+          };
+          return `${timestamp} [${level}]: ${message} ${Object.keys(meta).length ? stringifyWithBigInt(meta) : ''}`;
         })
       )
     })
@@ -74,6 +80,7 @@ const EVMBridgeABI = [
   "function release(uint256 nonce, address user, uint256 amount) external",
   "function completeLock(uint256 nonce) external",
   "function getLockTransactionStatus(uint256 nonce) external view returns (uint8)",
+  "function isReleaseProcessed(uint256 nonce) external view returns (bool)",
 ];
 
 // ============== Relayer Service ==============
@@ -176,8 +183,9 @@ class RelayerService {
       
       // 检查交易状态
       const status = await this.evmBridge.getLockTransactionStatus(nonce);
-      if (status !== 0) { // 0 = Pending
-        logger.warn('Lock transaction not pending, skipping', { nonce: nonce.toString(), status });
+      const statusNum = Number(status);
+      if (statusNum !== 0) { // 0 = Pending
+        logger.warn('Lock transaction not pending, skipping', { nonce: nonce.toString(), status: statusNum });
         return;
       }
       
@@ -186,7 +194,7 @@ class RelayerService {
         Number(nonce),
         solanaAddress,
         this.evmAddressToBytes(user),
-        BigInt(amount.toString())
+        Number(amount) // 转换为 Number，因为 USDC 金额不会超过 Number.MAX_SAFE_INTEGER
       );
       
       // 标记 EVM lock 为已完成
@@ -198,11 +206,14 @@ class RelayerService {
         completeTxHash: tx.hash,
       });
     } catch (error) {
-      logger.error('Error handling EVM lock event', { error, event });
+      logger.error('Error handling EVM lock event', { 
+        error: error instanceof Error ? { message: error.message, stack: error.stack } : error,
+        event 
+      });
     }
   }
   
-  async executeSolanaMint(evmLockNonce: number, solanaAddressBytes: string, evmUserAddress: number[], amount: bigint) {
+  async executeSolanaMint(evmLockNonce: number, solanaAddressBytes: string, evmUserAddress: number[], amount: number) {
     try {
       if (!this.solanaProgram) {
         throw new Error('Solana program not initialized');
@@ -238,12 +249,12 @@ class RelayerService {
         this.solanaProgram.programId
       );
       
-      // 调用 mint_tokens
+      // 调用 mint_tokens (使用 BN 类型，而不是 BigInt)
       const tx = await this.solanaProgram.methods
         .mintTokens(
-          BigInt(evmLockNonce),
+          new BN(evmLockNonce),
           evmUserAddress,
-          amount
+          new BN(amount)
         )
         .accounts({
           bridgeState,
@@ -262,7 +273,10 @@ class RelayerService {
         txSignature: tx,
       });
     } catch (error) {
-      logger.error('Error executing Solana mint', { error, evmLockNonce });
+      logger.error('Error executing Solana mint', { 
+        error: error instanceof Error ? { message: error.message, stack: error.stack } : error,
+        evmLockNonce 
+      });
       throw error;
     }
   }
@@ -274,21 +288,43 @@ class RelayerService {
         return;
       }
       
-      // 获取最新的 slot
-      const currentSlot = await this.solanaConnection.getSlot();
-      
-      if (this.lastProcessedSolanaSlot === 0) {
-        this.lastProcessedSolanaSlot = currentSlot - 100; // 往前查100个slot
-      }
-      
-      // 监听 BurnedEvent
+      // 监听 BurnedEvent - 获取最近的交易
       const signatures = await this.solanaConnection.getSignaturesForAddress(
         this.solanaProgram.programId,
-        { before: undefined, limit: 10 }
+        { before: undefined, limit: 20 } // 增加到 20 个
       );
       
+      logger.debug('Fetched Solana signatures', { 
+        count: signatures.length,
+        lastProcessedSlot: this.lastProcessedSolanaSlot 
+      });
+      
+      // 如果是首次运行，处理所有找到的交易
+      if (this.lastProcessedSolanaSlot === 0 && signatures.length > 0) {
+        // 从最旧的交易开始（倒序）
+        const oldestSlot = signatures[signatures.length - 1].slot;
+        this.lastProcessedSolanaSlot = oldestSlot - 1;
+        logger.info('Initialized Solana slot checkpoint from history', { 
+          oldestSlot,
+          lastProcessedSlot: this.lastProcessedSolanaSlot,
+          totalSignatures: signatures.length
+        });
+      }
+      
       for (const sig of signatures) {
-        if (sig.slot <= this.lastProcessedSolanaSlot) continue;
+        if (sig.slot <= this.lastProcessedSolanaSlot) {
+          logger.debug('Skipping already processed transaction', { 
+            slot: sig.slot, 
+            lastProcessed: this.lastProcessedSolanaSlot,
+            signature: sig.signature 
+          });
+          continue;
+        }
+        
+        logger.info('Processing Solana transaction', { 
+          slot: sig.slot, 
+          signature: sig.signature 
+        });
         
         await this.handleSolanaTransaction(sig.signature);
         this.lastProcessedSolanaSlot = Math.max(this.lastProcessedSolanaSlot, sig.slot);
@@ -307,40 +343,139 @@ class RelayerService {
         maxSupportedTransactionVersion: 0,
       });
       
-      if (!tx || !tx.meta) return;
-      
-      // 解析事件日志
-      const events = [];
-      for (const log of tx.meta.logMessages || []) {
-        if (log.includes('Program data:')) {
-          // 简化处理：实际应该解析 Anchor 事件
-          if (log.includes('BurnedEvent')) {
-            events.push({ type: 'Burned', log });
-          }
-        }
+      if (!tx || !tx.meta) {
+        logger.debug('Transaction not found or no metadata', { signature });
+        return;
       }
       
-      for (const event of events) {
-        if (event.type === 'Burned') {
-          // 这里需要解析实际的事件数据
-          // 简化版本：从日志中提取信息
-          logger.info('Detected Solana Burn event', { signature, event });
-          
-          // TODO: 解析事件，提取 nonce, user, evmRecipient, amount
-          // 然后调用 executeEvmRelease
-        }
+      const logs = tx.meta.logMessages || [];
+      
+      // 检查是否是 Burn 交易
+      const isBurnTx = logs.some(log => log.includes('Instruction: BurnTokens'));
+      
+      if (!isBurnTx) {
+        logger.debug('Not a burn transaction', { signature });
+        return;
       }
+      
+      logger.info('Found Burn transaction', { signature });
+      
+      // 查找事件数据 - Anchor 事件格式: "Program data: <base64>"
+      const eventDataLog = logs.find(log => log.includes('Program data:'));
+      
+      if (!eventDataLog) {
+        logger.warn('Burn transaction has no event data', { signature });
+        return;
+      }
+      
+      // 解析 base64 编码的事件数据
+      // 格式: "Program data: <base64_encoded_data>"
+      const base64Data = eventDataLog.split('Program data: ')[1];
+      if (!base64Data) {
+        logger.warn('Could not extract base64 data', { eventDataLog });
+        return;
+      }
+      
+      const eventBuffer = Buffer.from(base64Data, 'base64');
+      
+      // Anchor 事件格式:
+      // - 前8字节: 事件标识符 (discriminator)
+      // - 之后是事件数据的 Borsh 序列化
+      // BurnedEvent 结构:
+      //   - nonce: u64 (8 bytes)
+      //   - solana_user: Pubkey (32 bytes)
+      //   - evm_recipient: [u8; 20] (20 bytes)
+      //   - amount: u64 (8 bytes)
+      //   - timestamp: i64 (8 bytes)
+      
+      if (eventBuffer.length < 8 + 8 + 32 + 20 + 8 + 8) {
+        logger.warn('Event buffer too short', { 
+          bufferLength: eventBuffer.length,
+          expected: 8 + 8 + 32 + 20 + 8 + 8 
+        });
+        return;
+      }
+      
+      let offset = 8; // 跳过 discriminator
+      
+      // 读取 nonce (u64, little-endian)
+      const nonce = Number(eventBuffer.readBigUInt64LE(offset));
+      offset += 8;
+      
+      // 读取 solana_user (Pubkey, 32 bytes)
+      const solanaUser = new PublicKey(eventBuffer.slice(offset, offset + 32));
+      offset += 32;
+      
+      // 读取 evm_recipient ([u8; 20])
+      const evmRecipientBytes = eventBuffer.slice(offset, offset + 20);
+      const evmRecipient = '0x' + evmRecipientBytes.toString('hex');
+      offset += 20;
+      
+      // 读取 amount (u64, little-endian)
+      const amount = Number(eventBuffer.readBigUInt64LE(offset));
+      offset += 8;
+      
+      // 读取 timestamp (i64, little-endian)
+      const timestamp = Number(eventBuffer.readBigInt64LE(offset));
+      
+      logger.info('Parsed Burn event from Program data', {
+        signature,
+        nonce,
+        solanaUser: solanaUser.toBase58(),
+        evmRecipient,
+        amount,
+        timestamp,
+      });
+      
+      await this.handleSolanaBurnEvent({
+        solanaBurnNonce: new BN(nonce),
+        solanaUser,
+        amount: new BN(amount),
+        evmRecipient: Array.from(evmRecipientBytes),
+        timestamp: new BN(timestamp),
+      }, signature);
+      
     } catch (error) {
       logger.error('Error handling Solana transaction', { error, signature });
     }
   }
   
-  async executeEvmRelease(nonce: number, user: string, amount: bigint) {
+  async handleSolanaBurnEvent(eventData: any, signature: string) {
+    try {
+      const { solanaBurnNonce, solanaUser, evmRecipient, amount, timestamp } = eventData;
+      
+      // 将 EVM 接收地址从 bytes 转换为地址字符串
+      const evmRecipientAddress = '0x' + Buffer.from(evmRecipient).toString('hex');
+      
+      logger.info('Detected Solana Burn event', {
+        nonce: solanaBurnNonce.toString(),
+        solanaUser: solanaUser?.toBase58?.() ?? 'N/A',
+        evmRecipient: evmRecipientAddress,
+        amount: amount.toString(),
+        timestamp: timestamp?.toString() ?? 'N/A',
+        txSignature: signature,
+      });
+      
+      // 在 EVM 上执行 release
+      await this.executeEvmRelease(
+        Number(solanaBurnNonce),
+        evmRecipientAddress,
+        Number(amount)
+      );
+    } catch (error) {
+      logger.error('Error handling Solana burn event', { 
+        error: error instanceof Error ? { message: error.message, stack: error.stack } : error,
+        eventData 
+      });
+    }
+  }
+  
+  async executeEvmRelease(nonce: number, user: string, amount: number) {
     try {
       // 检查是否已处理
       const processed = await this.evmBridge.isReleaseProcessed(nonce);
       if (processed) {
-        logger.warn('Release already processed', { nonce });
+        logger.warn('Release already processed, skipping', { nonce });
         return;
       }
       
@@ -354,7 +489,10 @@ class RelayerService {
         txHash: receipt.hash,
       });
     } catch (error) {
-      logger.error('Error executing EVM release', { error, nonce });
+      logger.error('Error executing EVM release', { 
+        error: error instanceof Error ? { message: error.message, stack: error.stack } : error,
+        nonce 
+      });
       throw error;
     }
   }

@@ -14,6 +14,7 @@
     "deploy:all": "npm run deploy:evm && npm run deploy:solana",
     "demo:evm-to-solana": "ts-node scripts/demo-evm-to-solana.ts",
     "demo:solana-to-evm": "ts-node scripts/demo-solana-to-evm.ts",
+    "check:balances": "ts-node scripts/check-balances.ts",
     "setup": "./scripts/setup.sh",
     "stop": "./scripts/stop-services.sh",
     "test": "hardhat test"
