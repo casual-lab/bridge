@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # 开发环境容器
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bridge-dev
+    working_dir: /workspace
+    volumes:
+      # 挂载整个项目目录
+      - .:/workspace
+      # 缓存卷（提高性能）
+      - cargo-cache:/root/.cargo/registry
+      - cargo-git:/root/.cargo/git
+      - solana-cache:/root/.cache/solana
+      - target-cache:/workspace/programs/local-bridge/target
+    ports:
+      - "8899:8899"   # Solana 测试验证器
+      - "8545:8545"   # Hardhat 节点
+      - "9900:9900"   # Solana WebSocket
+      - "3000:3000"   # 前端（如果需要）
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+    networks:
+      - bridge-network
+
+  # 测试环境容器（运行 E2E 测试）
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bridge-test
+    working_dir: /workspace
+    volumes:
+      # 挂载整个项目目录
+      - .:/workspace
+      # 缓存卷
+      - cargo-cache:/root/.cargo/registry
+      - cargo-git:/root/.cargo/git
+      - solana-cache:/root/.cache/solana
+      - target-cache:/workspace/programs/local-bridge/target
+    command: npm run test:e2e
+    networks:
+      - bridge-network
+    profiles:
+      - testing
+
+volumes:
+  cargo-cache:
+  cargo-git:
+  solana-cache:
+  target-cache:
+
+networks:
+  bridge-network:
+    driver: bridge

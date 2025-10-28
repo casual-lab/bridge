@@ -1,0 +1,343 @@
+# Cross-Chain Bridge (EVM ↔ Solana)
+
+一个功能完整的跨链桥实现，支持 EVM 链（Hardhat 本地网络）与 Solana 链（solana-test-validator）之间的 USDC 双向转账。
+
+## 🏗️ 架构概述
+
+本项目实现了经典的 **Lock-Mint-Burn-Release** 跨链机制：
+
+- **EVM → Solana**: Lock (锁定) → Mint (铸造)
+- **Solana → EVM**: Burn (销毁) → Release (释放)
+
+### 组件
+
+1. **EVM 侧智能合约** (`contracts/evm/`)
+   - `MockUSDC.sol`: 模拟 USDC 代币（ERC20）
+   - `EVMBridge.sol`: 桥接合约，实现锁定、释放和退款功能
+
+2. **Solana 侧 Anchor 程序** (`programs/local-bridge/`)
+   - `local_bridge`: 实现铸造、销毁和退款功能
+   - 使用 SPL Token 标准
+   - 基于 PDA (Program Derived Address) 管理权限
+
+3. **Relayer 服务** (`relayer/`)
+   - 监听两条链上的事件
+   - 自动执行跨链交易
+   - 防重放和 nonce 管理
+
+## 📋 前置要求
+
+- Node.js >= 18
+- Rust >= 1.70
+- Solana CLI >= 1.17
+- Anchor CLI >= 0.30
+- Hardhat
+
+## 🚀 快速开始
+
+### 1. 安装依赖
+
+```bash
+# 安装项目依赖
+npm install
+
+# 安装 Relayer 依赖
+cd relayer && npm install && cd ..
+```
+
+### 2. 生成测试密钥
+
+**重要**: 在启动服务前，需要生成测试用的 EVM 和 Solana 密钥对。
+
+```bash
+npm run generate-keys
+```
+
+此命令会：
+- 生成新的 EVM 私钥
+- 生成新的 Solana 密钥对
+- 自动保存到 `.env` 文件
+- 将 Solana 密钥保存到 `~/.config/solana/id.json`
+
+> ⚠️ **注意**: 生成的密钥仅用于测试，切勿在主网或真实资金中使用！
+
+### 3. 一键启动（推荐）
+
+```bash
+./scripts/setup.sh
+```
+
+此脚本会自动完成：
+- 启动 Hardhat 本地网络 (http://localhost:8545)
+- 启动 Solana test validator (http://localhost:8899)
+- 编译并部署所有合约
+- 初始化桥接系统
+
+### 4. 手动启动（可选）
+
+如果需要分步骤操作：
+
+```bash
+# 终端 1: 启动 Hardhat 节点
+npx hardhat node
+
+# 终端 2: 启动 Solana validator
+solana-test-validator --reset
+
+# 终端 3: 编译合约
+npx hardhat compile
+anchor build
+
+# 终端 4: 部署 EVM 合约
+npx hardhat run scripts/deploy-evm.js --network localhost
+
+# 终端 5: 部署 Solana 程序
+anchor deploy
+ts-node scripts/deploy-solana.ts
+```
+
+### 5. 启动 Relayer
+
+**注意**: 在启动 Relayer 之前，需要先编译 Solana 程序生成 IDL 文件。
+
+```bash
+# 确保已经编译了 Solana 程序
+anchor build
+
+# 启动 Relayer
+cd relayer
+npm run dev
+```
+
+Relayer 会自动：
+- 监听 EVM Lock 事件 → 在 Solana 上 Mint
+- 监听 Solana Burn 事件 → 在 EVM 上 Release
+
+## 🎮 演示脚本
+
+### EVM → Solana 跨链转账
+
+```bash
+ts-node scripts/demo-evm-to-solana.ts
+```
+
+此脚本会：
+1. 在 EVM 上锁定 100 USDC
+2. 触发 `Locked` 事件
+3. Relayer 监听到事件后，在 Solana 上铸造对应的代币
+4. 显示余额变化和交易状态
+
+### Solana → EVM 跨链转账
+
+```bash
+ts-node scripts/demo-solana-to-evm.ts
+```
+
+此脚本会：
+1. 在 Solana 上销毁 50 tokens
+2. 触发 `Burned` 事件
+3. Relayer 监听到事件后，在 EVM 上释放对应的 USDC
+4. 显示余额变化和交易状态
+
+## 🔐 安全机制
+
+### 1. Nonce 防重放
+- 每笔跨链交易都有唯一的 nonce
+- 已处理的 nonce 会被记录，防止重复执行
+
+### 2. 超时回滚
+- 默认超时时间：60 秒
+- Lock 超时后可调用 `refund()` 取回代币
+- Burn 超时后可调用 `refundBurn()` 重新铸造代币
+
+### 3. 访问控制
+- 只有授权的 Relayer 可以调用 `mint` 和 `release`
+- 管理员可以更新 Relayer 地址
+
+### 4. 交易状态管理
+- Pending: 待处理
+- Completed: 已完成
+- Refunded: 已退款
+
+## 📁 项目结构
+
+```
+.
+├── contracts/evm/          # EVM 智能合约
+│   ├── MockUSDC.sol
+│   └── EVMBridge.sol
+├── programs/local-bridge/  # Solana Anchor 程序
+│   └── src/lib.rs
+├── relayer/               # Relayer 服务
+│   └── src/index.ts
+├── scripts/               # 部署和演示脚本
+│   ├── setup.sh
+│   ├── deploy-evm.js
+│   ├── deploy-solana.ts
+│   ├── demo-evm-to-solana.ts
+│   └── demo-solana-to-evm.ts
+├── hardhat.config.js      # Hardhat 配置
+├── Anchor.toml           # Anchor 配置
+└── package.json          # 项目依赖
+```
+
+## 🔧 配置
+
+主要配置在 `.env` 文件中（从 `.env.example` 复制）：
+
+```bash
+# EVM Configuration
+EVM_RPC_URL=http://localhost:8545
+EVM_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+
+# Solana Configuration
+SOLANA_RPC_URL=http://localhost:8899
+SOLANA_WALLET_PATH=~/.config/solana/id.json
+
+# Contract Addresses (自动填充)
+EVM_BRIDGE_ADDRESS=
+MOCK_USDC_ADDRESS=
+SOLANA_BRIDGE_PROGRAM_ID=
+SOLANA_MINT_ADDRESS=
+```
+
+## 📊 测试流程
+
+### 完整跨链流程测试
+
+1. **启动所有服务**
+   ```bash
+   ./scripts/setup.sh
+   cd relayer && npm run dev
+   ```
+
+2. **执行 EVM → Solana 转账**
+   ```bash
+   ts-node scripts/demo-evm-to-solana.ts
+   ```
+   预期结果：
+   - EVM USDC 余额减少
+   - Relayer 日志显示监听到 Lock 事件
+   - Solana token 余额增加
+
+3. **执行 Solana → EVM 转账**
+   ```bash
+   ts-node scripts/demo-solana-to-evm.ts
+   ```
+   预期结果：
+   - Solana token 余额减少
+   - Relayer 日志显示监听到 Burn 事件
+   - EVM USDC 余额增加
+
+### 超时回滚测试
+
+1. **停止 Relayer**
+   ```bash
+   # 在 relayer 终端按 Ctrl+C
+   ```
+
+2. **发起跨链交易**
+   ```bash
+   ts-node scripts/demo-evm-to-solana.ts
+   ```
+
+3. **等待超时（60秒）后执行退款**
+   ```bash
+   # 调用 refund 函数（需要编写测试脚本）
+   ```
+
+## 🛑 停止服务
+
+```bash
+./scripts/stop-services.sh
+```
+
+此命令会停止：
+- Hardhat 本地节点
+- Solana test validator
+- 所有后台进程
+
+## 🐛 常见问题
+
+### 1. Hardhat 节点无法启动
+```bash
+# 检查端口占用
+lsof -i :8545
+# 杀死占用进程
+kill -9 <PID>
+```
+
+### 2. Solana validator 启动失败
+```bash
+# 清理旧数据
+rm -rf test-ledger/
+solana-test-validator --reset
+```
+
+### 3. Anchor 编译错误
+```bash
+# 清理并重新编译
+anchor clean
+anchor build
+```
+
+### 4. 部署后合约地址未更新到 .env
+```bash
+# 手动检查部署摘要
+cat deployments/evm-deployment.json
+cat deployments/solana-deployment.json
+```
+
+## 📝 开发说明
+
+### 修改合约后重新部署
+
+```bash
+# EVM 合约
+npx hardhat compile
+npx hardhat run scripts/deploy-evm.js --network localhost
+
+# Solana 程序
+anchor build
+anchor deploy
+ts-node scripts/deploy-solana.ts
+```
+
+### 查看日志
+
+```bash
+# Hardhat 日志
+tail -f logs/hardhat.log
+
+# Solana validator 日志
+tail -f logs/solana-validator.log
+
+# Relayer 日志
+tail -f relayer/logs/combined.log
+```
+
+## 🎯 验收标准
+
+根据设计文档，本项目实现了以下验收标准：
+
+- ✅ EVM 和 Solana 合约成功部署
+- ✅ Lock → Mint 流程完整实现
+- ✅ Burn → Release 流程完整实现
+- ✅ Nonce 防重放机制
+- ✅ 超时回滚机制
+- ✅ Relayer 自动监听和执行
+- ✅ CLI 演示脚本
+- ✅ 完整的日志和可追溯性
+
+## 📄 License
+
+MIT
+
+## 🙏 致谢
+
+本项目使用了以下优秀的开源项目：
+- Hardhat
+- Anchor
+- OpenZeppelin Contracts
+- Solana Web3.js
+- Ethers.js

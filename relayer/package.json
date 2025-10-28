@@ -1,0 +1,33 @@
+{
+  "name": "cross-chain-bridge-relayer",
+  "version": "1.0.0",
+  "description": "Relayer service for cross-chain bridge",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "watch": "ts-node-dev --respawn src/index.ts"
+  },
+  "keywords": [
+    "relayer",
+    "bridge",
+    "cross-chain"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/web3.js": "^1.95.0",
+    "@solana/spl-token": "^0.4.0",
+    "ethers": "^6.13.0",
+    "dotenv": "^16.4.0",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.4.0",
+    "ts-node": "^10.9.0",
+    "ts-node-dev": "^2.0.0"
+  }
+}

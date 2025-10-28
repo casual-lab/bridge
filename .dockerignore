@@ -1,0 +1,17 @@
+# Docker 环境 - .dockerignore
+# 只排除构建镜像时不需要的文件
+
+# Docker 相关
+.dockerignore
+docker-compose.yml
+
+# Git
+.git/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,42 @@
+{
+  "name": "cross-chain-bridge-evm",
+  "version": "1.0.0",
+  "description": "EVM side of the cross-chain bridge (Hardhat local network)",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "compile:solana": "anchor build",
+    "compile:all": "npm run compile && npm run compile:solana",
+    "node": "hardhat node",
+    "generate-keys": "node scripts/generate-keys.js",
+    "deploy:evm": "hardhat run scripts/deploy-evm.js --network localhost",
+    "deploy:solana": "anchor deploy && ts-node scripts/deploy-solana.ts",
+    "deploy:all": "npm run deploy:evm && npm run deploy:solana",
+    "demo:evm-to-solana": "ts-node scripts/demo-evm-to-solana.ts",
+    "demo:solana-to-evm": "ts-node scripts/demo-solana-to-evm.ts",
+    "setup": "./scripts/setup.sh",
+    "stop": "./scripts/stop-services.sh",
+    "test": "hardhat test"
+  },
+  "keywords": [
+    "bridge",
+    "cross-chain",
+    "hardhat",
+    "ethereum"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/node": "^24.9.1",
+    "hardhat": "^2.22.0"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@openzeppelin/contracts": "^5.0.0",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.95.0",
+    "dotenv": "^16.6.1",
+    "ethers": "^6.13.0"
+  }
+}
