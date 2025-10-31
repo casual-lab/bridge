@@ -34,14 +34,9 @@ async function main() {
   console.log("EVMBridge deployed to:", bridgeAddress);
   console.log("Relayer address:", relayerAddress);
 
-  // 4. 给 Bridge 合约一些 USDC（用于 release 操作）
-  console.log("\n4. Funding bridge contract...");
-  const fundAmount = hre.ethers.parseUnits("500000", 6); // 50万 USDC
-  const approveTx = await mockUSDC.approve(bridgeAddress, fundAmount);
-  await approveTx.wait();
-  const transferTx = await mockUSDC.transfer(bridgeAddress, fundAmount);
-  await transferTx.wait();
-  console.log("Transferred", hre.ethers.formatUnits(fundAmount, 6), "USDC to bridge");
+  // 4. 零资金池设计 - 不预存 USDC
+  console.log("\n4. Bridge initialized with zero liquidity pool");
+  console.log("   Note: Solana→EVM requires prior EVM→Solana locks");
 
   // 5. 保存部署信息到 .env 文件
   console.log("\n5. Saving deployment info...");

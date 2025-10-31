@@ -163,7 +163,34 @@ pub mod local_bridge {
             timestamp: clock.unix_timestamp,
         });
 
-        msg!("Refunded burn transaction nonce: {}", burn_tx.nonce);
+        msg!("Refunded {} tokens for nonce {}", burn_tx.amount, burn_tx.nonce);
+        Ok(())
+    }
+
+    /// 水龙头：铸造测试代币给用户（仅用于测试）
+    pub fn faucet(ctx: Context<Faucet>, amount: u64) -> Result<()> {
+        require!(amount > 0, BridgeError::InvalidAmount);
+        require!(amount <= 1000 * 1_000_000, BridgeError::InvalidAmount); // 最多 1000 tokens
+
+        let bridge_state = &ctx.accounts.bridge_state;
+        let bridge_state_bump = bridge_state.bump;
+        let seeds: &[&[u8]] = &[
+            b"bridge_state",
+            &[bridge_state_bump],
+        ];
+        let signer = &[seeds];
+
+        let cpi_accounts = MintTo {
+            mint: ctx.accounts.mint.to_account_info(),
+            to: ctx.accounts.user_token_account.to_account_info(),
+            authority: ctx.accounts.bridge_state.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+        
+        token::mint_to(cpi_ctx, amount)?;
+
+        msg!("Faucet: Minted {} tokens to {}", amount, ctx.accounts.user.key());
         Ok(())
     }
 
@@ -286,6 +313,25 @@ pub struct RefundBurn<'info> {
         has_one = user
     )]
     pub burn_transaction: Account<'info, BurnTransaction>,
+    
+    #[account(mut)]
+    pub mint: Account<'info, Mint>,
+    
+    #[account(mut)]
+    pub user_token_account: Account<'info, TokenAccount>,
+    
+    pub user: Signer<'info>,
+    
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct Faucet<'info> {
+    #[account(
+        seeds = [b"bridge_state"],
+        bump = bridge_state.bump
+    )]
+    pub bridge_state: Account<'info, BridgeState>,
     
     #[account(mut)]
     pub mint: Account<'info, Mint>,

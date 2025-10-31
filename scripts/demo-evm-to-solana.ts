@@ -32,6 +32,18 @@ const MockUSDCABI = [
 async function main() {
   console.log('\n============== EVM to Solana Bridge Demo ==============\n');
 
+  // 从命令行参数获取转账金额,默认 100 USDC
+  const amountArg = process.argv[2];
+  const transferAmount = amountArg ? parseFloat(amountArg) : 100;
+  
+  if (isNaN(transferAmount) || transferAmount <= 0) {
+    console.error('❌ Error: Invalid amount. Usage: npm run demo:evm-to-solana [amount]');
+    console.error('   Example: npm run demo:evm-to-solana 50');
+    process.exit(1);
+  }
+
+  console.log(`📦 Transfer Amount: ${transferAmount} USDC\n`);
+
   // 连接到本地网络
   const provider = new ethers.JsonRpcProvider(process.env.EVM_RPC_URL || 'http://localhost:8545');
   
@@ -71,7 +83,7 @@ async function main() {
   console.log('');
 
   // 2. 授权
-  const lockAmount = ethers.parseUnits('100', decimals); // 锁定 100 USDC
+  const lockAmount = ethers.parseUnits(transferAmount.toString(), decimals);
   console.log('2. Approving bridge to spend USDC...');
   const approveTx = await usdc.approve(bridgeAddress, lockAmount);
   await approveTx.wait();

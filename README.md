@@ -28,11 +28,17 @@ cd relayer && npm run dev
 
 ### 5. 运行演示
 ```bash
-# EVM → Solana 跨链
+# EVM → Solana 跨链 (默认 100 USDC)
 npm run demo:evm-to-solana
 
-# Solana → EVM 跨链
+# 指定转账金额 (例如: 50 USDC)
+npm run demo:evm-to-solana 50
+
+# Solana → EVM 跨链 (默认 50 tokens)
 npm run demo:solana-to-evm
+
+# 指定转账金额 (例如: 25 tokens)
+npm run demo:solana-to-evm 25
 ```
 
 ## 📚 详细文档

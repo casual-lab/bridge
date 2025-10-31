@@ -17,6 +17,18 @@ const SOLANA_TEST_KEYPAIR = Keypair.fromSeed(SOLANA_TEST_SEED);
 async function main() {
   console.log('\n============== Solana to EVM Bridge Demo ==============\n');
 
+  // 从命令行参数获取转账金额,默认 50 tokens
+  const amountArg = process.argv[2];
+  const transferAmount = amountArg ? parseFloat(amountArg) : 50;
+  
+  if (isNaN(transferAmount) || transferAmount <= 0) {
+    console.error('❌ Error: Invalid amount. Usage: npm run demo:solana-to-evm [amount]');
+    console.error('   Example: npm run demo:solana-to-evm 25');
+    process.exit(1);
+  }
+
+  console.log(`📦 Transfer Amount: ${transferAmount} tokens\n`);
+
   // 设置 provider（使用部署者钱包作为 payer）
   const provider = AnchorProvider.env();
   setProvider(provider);
@@ -89,18 +101,18 @@ async function main() {
     console.log('   Solana Token Balance: 0 tokens (account not found)');
   }
   
-  const burnAmount = new BN(50 * 1e6); // 需要销毁 50 tokens
+  const burnAmount = new BN(transferAmount * 1e6); // 使用命令行参数的数量
   const requiredBalance = burnAmount.toNumber();
   
   // 如果余额不足，先执行 EVM→Solana mint
   if (currentBalance < requiredBalance) {
     console.log(`   ⚠️  Insufficient balance! Need ${requiredBalance / 1e6} tokens, have ${currentBalance / 1e6}`);
-    console.log('\n   → Running EVM→Solana mint to top up balance...\n');
+    console.log(`\n   → Running EVM→Solana mint to top up balance (minting ${transferAmount} USDC)...\n`);
     
     // 动态导入并执行 demo-evm-to-solana
     const { execSync } = await import('child_process');
     try {
-      const result = execSync('npm run demo:evm-to-solana', {
+      const result = execSync(`npm run demo:evm-to-solana ${transferAmount}`, {
         cwd: process.cwd(),
         stdio: 'inherit',
         encoding: 'utf8',

@@ -1,15 +1,15 @@
 {
   "network": "localnet",
-  "deployer": "FC5oeo2yUfWLGr7Gmczyfz7Q9udYy9ifMRPqGdou7cn3",
+  "deployer": "AYTwXehYpervEXnemD7851rjfXNjb5Z4Hpmgf8UM2btk",
   "program": {
     "programId": "4zNJzVfMcFQsYWR62i6akHQXKB1t1YatSJtcJVHdbLt2",
     "bridgeState": "3umLaae68q8o9bnzCgB9qNDwQoLmRzUDyySTgnXsw8Vf"
   },
   "token": {
-    "mint": "Hv5L1ne4vponGvK72Pz8DKnRfo1Q6rVv1Lt8u1hc9tje",
+    "mint": "GDQEkETWC3noYfCXEqy2JC8j9LVB74gYEgRtc7TVvLUF",
     "decimals": 6,
     "mintAuthority": "3umLaae68q8o9bnzCgB9qNDwQoLmRzUDyySTgnXsw8Vf"
   },
-  "relayer": "FC5oeo2yUfWLGr7Gmczyfz7Q9udYy9ifMRPqGdou7cn3",
-  "timestamp": "2025-10-28T12:02:08.624Z"
+  "relayer": "AYTwXehYpervEXnemD7851rjfXNjb5Z4Hpmgf8UM2btk",
+  "timestamp": "2025-10-31T13:22:48.403Z"
 }
